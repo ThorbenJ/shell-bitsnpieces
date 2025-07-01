@@ -1,0 +1,348 @@
+#!/bin/bash
+#
+# A simple script to interactively work with kubectl
+
+# Default things/kind to list if no argument is given
+MORE="all,ingress,secret"
+
+kobj=()
+
+# Remove replicasets where desired, current, & ready are all 0
+clean_replicaset.apps() {
+  local res="$2"
+  local ns="$1"
+  local info=$(kubectl get "$res" -n "$ns" --no-headers)
+
+  set -- $info
+
+  if [[ "$2" == 0 && "$3" == 0 && "$4" == 0 ]]; then
+#     echo "! Deleting: $res @$ns"
+    kubectl delete "$res" -n "$ns"
+  fi
+}
+
+do_C() {
+  local ns="$1"; shift
+  ptitle "CLEAN @$1"
+  for obj in "$@"; do
+    local kind="${obj%%/*}"
+    if declare -f "clean_$kind" >/dev/null; then
+      "clean_$kind" "$ns" "$obj"
+    else
+      echo "! No clean function for kind: $kind ($obj)"
+    fi
+  done
+}
+
+do_D() {
+  local ns="$1"; shift
+  ptitle "DESCRIBE $2 @$ns"
+  kubectl describe -n "$ns" "$@"
+}
+
+do_E() {
+  local ns="$1"; shift
+
+  for obj in "$@"; do
+    # If no kind/name, or user passed "all", show full event list
+    if [[ "$obj" == "all" || "$obj" != */* ]]; then
+      ptitle "EVENTS (all objects) @$ns"
+      kubectl get events -n "$ns" --sort-by=.metadata.creationTimestamp
+      return
+    fi
+
+    # Parse kind/name
+    local kind="${obj%%/*}"
+    local name="${obj##*/}"
+
+    ptitle "EVENTS for $kind/$name @$ns"
+    kubectl get events -n "$ns" \
+      --field-selector "involvedObject.name=$name,involvedObject.kind=$kind" \
+      --sort-by=.metadata.creationTimestamp
+  done
+}
+
+do_F() {
+  local ns="$1"; shift
+  for obj in "$@"; do
+    ptitle "FOLLOW $obj @$ns"
+    echo "[Press Return to stop following]"
+    kubectl logs "$obj" -f -n "$ns" &
+    pid="$!"
+    read -r
+    kill "$pid" 2>/dev/null
+    wait "$pid" 2>/dev/null
+    echo "! Follow stopped"
+  done
+}
+
+# Maybe switch focus to the obj gotten here?
+do_G() {
+  local ns="$1"; shift
+  ptitle "GET $2 @$ns"
+  kubectl get -n "$ns" "$@"
+}
+
+do_H() {
+ ptitle "HELP"
+  cat <<_EOM_
+Enter one letter followed by a number. e.g. A12
+
+The number (#) corresponds to a listed K8s object.
+This maybe a range ("#-#" -> "12-34") - Consecutive objects from the same NS will be grouped.
+<#> -> Number is required | [#] -> Number is optional | (#) -> Number is ignored
+
+The letter can be one of:
+ - C -> Clean <#> - Only remove if orphaned
+ - D -> Describe <#>
+ - E -> (recent) Events [#]
+ - F -> Follow log <#>
+ - G -> Plain get <#>
+ - H -> (this) Help (#)
+ - I -> Info (get wide) <#>
+ - K -> Set/change target Kind to list [#]
+ - L -> Logs <#>
+ - N -> Set/change Namespace [#]
+ - Q -> Quit (#)
+ - R -> Remove (Delete) <#>
+ - S -> Shell <#>
+ - W -> Watch (get every 6s) <#>
+ - Y -> Get YAML <#>
+
+_EOM_
+}
+
+do_I() {
+  local ns="$1"; shift
+  ptitle "INFO $2 @$ns"
+  kubectl get -o wide -n "$ns" "$@"
+}
+
+do_K() {
+  local last="${@: -1}"
+  local kind="${last%%/*}"
+
+  ptitle "Set Kind"
+  # If no kind in arg, or same as current kind then ask
+  if [[ -z "$kind" || "$WHAT" == "$kind" ]]; then
+    read -p "Set Kind to: " -r line
+    WHAT=${line:-$MORE}
+  else
+    WHAT="$kind"
+  fi
+
+  echo "! What kind to list is now: $WHAT"
+}
+
+do_L() {
+  local ns="$1"; shift
+  for obj in "$@"; do
+    ptitle "LOGS $obj @$ns"
+    kubectl logs "$obj" -n "$ns"
+  done
+}
+
+do_N() {
+  ptitle "Set Namespace"
+  # If no NS arg, or same as current NS then ask
+  if [[ -z "$1" || "$NAMESPACE" == "$1" ]]; then
+    read -p "Set Namespace to: " -r line
+    setup_ns "$line"
+  else
+    setup_ns "$1"
+  fi
+}
+
+do_Q() {
+  exit 0
+}
+
+do_R() {
+  local ns="$1"; shift
+  ptitle "REMOVE $2 @$ns"
+  kubectl delete -n "$ns" "$@"
+}
+
+do_S() {
+  local ns="$1"; shift
+  for obj in "$@"; do
+    ptitle "SHELL $obj @$ns"
+    kubectl exec "$obj" -n "$ns" -it -- bash -login
+  done
+}
+
+do_W() {
+  local ns="$1"; shift
+  local OK=0
+  while [ $OK -eq 0 ]; do
+    clear
+    ptitle "WATCH #$# @$ns - $(date)"
+    kubectl get -o wide -n "$ns" "$@"
+    OK=$?
+    echo ""
+    read -t 6 -r -p "[Press Return to stop]" line && break
+  done
+}
+
+do_Y() {
+  local ns="$1"; shift
+  ptitle "YAML $2 @$ns"
+  kubectl get -o yaml -n "$ns" "$@"
+}
+
+ptitle() {
+  local T="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
+  printf '\n%s %s %s\n' "$T" "$1" "$T"
+}
+
+setup_ns() {
+
+  local NS="$NAMESPACE"
+
+  # If namespace passed as arg
+  if [[ -n "$1" ]]; then
+    if [[ "$1" == "all" ]]; then
+      NS=""
+    else
+      NS="$1"
+    fi
+
+  #If not try using current dir and namespace name
+  elif [[ -z "$NS" ]]; then
+    NS="$(basename "$PWD")"
+
+  fi
+
+  if [[ -n "$NS" ]]; then
+    if ! kubectl get namespace "$NS" >/dev/null 2>&1; then
+      NS=""
+    fi
+  fi
+
+  NAMESPACE="$NS"
+  if [[ -n "$NAMESPACE" ]]; then
+    echo "! Using namespace: $NAMESPACE"
+  else
+    echo "! Using namespace: <ALL>"
+  fi
+}
+
+klist() {
+  local res="$1"
+
+  local KCNS=""
+  if [[ -n "$NAMESPACE" ]]; then
+    KCNS="--namespace=$NAMESPACE"
+  else
+    KCNS="--all-namespaces"
+  fi
+
+  KCGET="$(kubectl get "$res" $KCNS --show-kind 2>/dev/null)"
+  [[ $? = 0 ]] || return $?
+
+  ptitle "LIST $res"
+
+  kobj=()
+  local index=0
+  while IFS= read -r line; do
+
+    local NS="$NAMESPACE"
+    if [[ "$line" =~ ^NAME|^NAMESPACE ]]; then
+      kind=""
+      echo "   $line"
+      continue
+    fi
+
+    set -- $line
+
+    if [[ -z "$NAMESPACE" ]]; then
+      NS="$1"; res="$2"
+    else
+      NS="$NAMESPACE"; res="$1"
+    fi
+
+    if [[ "$res" =~ ^([a-zA-Z0-9.-]+)/([^ ]+) ]]; then
+      # Match kind/name
+      kind="${BASH_REMATCH[1]}"
+      name="${BASH_REMATCH[2]}"
+
+      printf "%2d: %s\n" "$index" "$line"
+      kobj[$index]="$NS/$kind/$name"
+      ((index++))
+    else
+      echo "$line"
+    fi
+  done <<<"$KCGET"
+
+  return 0
+}
+
+input_loop(){
+  while klist "$WHAT"; do
+
+    read -r -p "> " input
+
+    # Trim leading/trailing whitespace
+    input="${input#"${input%%[![:space:]]*}"}"
+    input="${input%"${input##*[![:space:]]}"}"
+
+    # exit loop on empty input
+    [[ -z "$input" ]] && break
+
+    if [[ "$input" =~ ^([a-zA-Z])([0-9]+)?(-([0-9]+))?$ ]]; then
+      local letter="${BASH_REMATCH[1]}"
+      local start="${BASH_REMATCH[2]}"
+      local end="${BASH_REMATCH[4]}"
+
+      [[ -z "$start" ]] && start=""  # no number given
+      [[ -z "$end" ]] && end="$start" #no range given
+
+      letter=$(tr '[:lower:]' '[:upper:]' <<<"$letter")
+
+      if declare -f "do_$letter" > /dev/null; then
+        if [[ -z "$start" ]]; then
+          # No number: pass NS WHAT
+          "do_$letter" "$NAMESPACE" "$WHAT"
+        else
+          local ns_objs=()
+          local ns=""
+          local ns_name=""
+          local ns_objs=()
+          for ((i=start; i<=end; i++)); do
+            obj="${kobj[$i]}"
+            if [[ -z "$obj" ]]; then
+              echo "! Invalid object index: $i"
+              continue
+            fi
+            ns="${obj%%/*}"
+            if [[ "$ns" != "$ns_name" && "${#ns_objs[@]}" -gt 0 ]]; then
+              "do_$letter" "$ns_name" "${ns_objs[@]}"
+              ns_objs=()
+            fi
+
+            ns_name="$ns"
+            ns_objs+=("${obj#*/}")
+          done
+
+          if [[ "${#ns_objs[@]}" -gt 0 ]]; then
+            "do_$letter" "$ns_name" "${ns_objs[@]}"
+          fi
+        fi
+        echo ""
+        read -r -p "[Press Return to continue]"
+      else
+        echo "! No such function: '$letter'"
+      fi
+
+    else
+      echo "! Invalid input: '$input'"
+      do_H
+    fi
+  done
+}
+
+WHAT=${1:-$MORE}
+
+setup_ns
+
+input_loop
