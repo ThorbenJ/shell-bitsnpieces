@@ -286,7 +286,7 @@ input_loop(){
     input="${input#"${input%%[![:space:]]*}"}"
     input="${input%"${input##*[![:space:]]}"}"
 
-    # exit loop on empty input
+    # repeat object list on empty input
     [[ -z "$input" ]] && continue
 
     if [[ "$input" =~ ^([a-zA-Z])([0-9]+)?(-([0-9]+))?$ ]]; then
