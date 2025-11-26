@@ -21,9 +21,26 @@ clean_replicaset.apps() {
   fi
 }
 
+# Remove pods where 0/x and status "dead"
+clean_pod() {
+  local res="$2"
+  local ns="$1"
+  local info=$(kubectl get "$res" -n "$ns" --no-headers)
+
+  local dead_status="Error ContainerStatusUnknown"
+
+  # NAME READY STATUS RESTARTS AGE
+  set -- $info
+
+  if [[ "$2" == 0/* && "$dead_status" =~ "$3" ]]; then
+#     echo "! Deleting: $res @$ns"
+    kubectl delete "$res" -n "$ns"
+  fi
+}
+
 do_C() {
   local ns="$1"; shift
-  ptitle "CLEAN @$1"
+  ptitle "CLEAN $# (objects) in $ns"
   for obj in "$@"; do
     local kind="${obj%%/*}"
     if declare -f "clean_$kind" >/dev/null; then
@@ -167,7 +184,7 @@ do_S() {
   local ns="$1"; shift
   for obj in "$@"; do
     ptitle "SHELL $obj @$ns"
-    kubectl exec "$obj" -n "$ns" -it -- bash -login
+    kubectl exec "$obj" -n "$ns" -it -u root -- bash -login
   done
 }
 
