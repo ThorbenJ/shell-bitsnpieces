@@ -61,16 +61,19 @@ do_E() {
   local ns="$1"; shift
 
   for obj in "$@"; do
-    # If no kind/name, or user passed "all", show full event list
     if [[ "$obj" == "all" || "$obj" != */* ]]; then
       ptitle "EVENTS (all objects) @$ns"
       kubectl get events -n "$ns" --sort-by=.metadata.creationTimestamp
       return
     fi
 
-    # Parse kind/name
-    local kind="${obj%%/*}"
+    local kind=$(get_actual_kind "$ns" "$obj")
     local name="${obj##*/}"
+
+    if [[ -z "$kind" || "$kind" == "null" ]]; then
+      echo "! Could not determine kind for $obj in namespace $ns"
+      continue
+    fi
 
     ptitle "EVENTS for $kind/$name @$ns"
     kubectl get events -n "$ns" \
@@ -176,7 +179,7 @@ do_Q() {
 
 do_R() {
   local ns="$1"; shift
-  ptitle "REMOVE $2 @$ns"
+  ptitle "REMOVE $# (objects) in @$ns"
   kubectl delete -n "$ns" "$@"
 }
 
@@ -184,7 +187,7 @@ do_S() {
   local ns="$1"; shift
   for obj in "$@"; do
     ptitle "SHELL $obj @$ns"
-    kubectl exec "$obj" -n "$ns" -it -u root -- bash -login
+    kubectl exec "$obj" -n "$ns" -it -- bash -login
   done
 }
 
@@ -210,6 +213,10 @@ do_Y() {
 ptitle() {
   local T="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
   printf '\n%s %s %s\n' "$T" "$1" "$T"
+}
+
+get_actual_kind() {
+  kubectl get "$2" -n "$1" -o json 2>/dev/null | jq -r '.kind'
 }
 
 setup_ns() {
