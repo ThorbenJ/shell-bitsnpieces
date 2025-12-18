@@ -18,7 +18,9 @@ clean_replicaset.apps() {
 
   if [[ "$2" == 0 && "$3" == 0 && "$4" == 0 ]]; then
 #     echo "! Deleting: $res @$ns"
-    kubectl delete "$res" -n "$ns"
+    if confirm_action "[$res]"; then
+      kubectl delete "$res" -n "$ns"
+    fi
   fi
 }
 
@@ -35,7 +37,9 @@ clean_pod() {
 
   if [[ "$2" == 0/* && "$dead_status" =~ "$3" ]]; then
 #     echo "! Deleting: $res @$ns"
-    kubectl delete "$res" -n "$ns"
+    if confirm_action "[$res]"; then
+      kubectl delete "$res" -n "$ns"
+    fi
   fi
 }
 
@@ -182,7 +186,9 @@ do_Q() {
 do_R() {
   local ns="$1"; shift
   ptitle "REMOVE $# (objects) in @$ns"
-  kubectl delete -n "$ns" "$@"
+  if confirm_action "[$@]"; then
+    kubectl delete -n "$ns" "$@"
+  fi
 }
 
 do_S() {
@@ -267,6 +273,35 @@ follow_wait() {
 
 get_actual_kind() {
   kubectl get "$2" -n "$1" -o json 2>/dev/null | jq -r '.kind'
+}
+
+confirm_action() {
+    local object=${1:?Object (thing being acted on) required}
+    local verb=${2:-removal}
+    local action_var="CONFIRM_ACTION_$(tr '[:lower:]' '[:upper:]' <<<$verb)"
+
+    # If the relevant CONFIRM_ACTION_* variable is already 'y', return immediately
+    if [[ "${!action_var}" == "y" ]]; then
+        return 0
+    fi
+
+    # Prompt for confirmation
+    read -rp "Please confirm $verb of $object? (y)es|(n)o|(a)ll [yna]> " response
+    case "$response" in
+    [Yy])
+        # Proceed just this once
+        return 0
+        ;;
+    [Aa])
+        # Set to confirm all future actions of this type
+        declare -g "$action_var"="y"
+        return 0
+        ;;
+    *)
+        echo "! $verb cancelled by user."
+        return 1
+        ;;
+    esac
 }
 
 setup_ns() {
