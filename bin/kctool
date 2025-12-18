@@ -86,13 +86,7 @@ do_F() {
   local ns="$1"; shift
   for obj in "$@"; do
     ptitle "FOLLOW $obj @$ns"
-    echo "[Press Return to stop following]"
-    kubectl logs "$obj" -f -n "$ns" &
-    pid="$!"
-    read -r
-    kill "$pid" 2>/dev/null
-    wait "$pid" 2>/dev/null
-    echo "! Follow stopped"
+    follow_wait "Logs ($obj)" kubectl logs "$obj" -f -n "$ns"
   done
 }
 
@@ -191,6 +185,31 @@ do_S() {
   done
 }
 
+do_T() {
+  local ns="$1"; shift
+
+  for obj in "$@"; do
+    if [[ "$obj" == "all" || "$obj" != */* ]]; then
+      ptitle "TRAIL EVENTS (all objects) @$ns"
+      follow_wait "Events (@$ns)" kubectl get events -n "$ns" --watch --sort-by=.metadata.creationTimestamp
+    else
+      local kind=$(get_actual_kind "$ns" "$obj")
+      local name="${obj##*/}"
+
+      if [[ -z "$kind" || "$kind" == "null" ]]; then
+        echo "! Could not determine kind for $obj in namespace $ns"
+        continue
+      fi
+
+      ptitle "TRAIL EVENTS for $kind/$name @$ns"
+      follow_wait "Events ($kind/$name)" \
+        kubectl get events -n "$ns" \
+        --field-selector "involvedObject.name=$name,involvedObject.kind=$kind" \
+        --watch
+    fi
+  done
+}
+
 do_W() {
   local ns="$1"; shift
   local OK=0
@@ -213,6 +232,19 @@ do_Y() {
 ptitle() {
   local T="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
   printf '\n%s %s %s\n' "$T" "$1" "$T"
+}
+
+follow_wait() {
+  # Usage: follow_wait <thing> <command...>
+  local thing="$1"
+  shift
+  echo "[Press Return to stop following: $thing]"
+  "$@" &
+  local pid="$!"
+  read -r
+  kill "$pid" 2>/dev/null
+  wait "$pid" 2>/dev/null
+  echo "! Stopped following: $thing"
 }
 
 get_actual_kind() {
