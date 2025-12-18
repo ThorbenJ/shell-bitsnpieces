@@ -360,6 +360,7 @@ input_loop(){
     if [[ -n "$_NEW_INPUT" ]]; then
       input="$_NEW_INPUT"
       _NEW_INPUT=""
+      echo ">> $input"
     else
       read -r -p "> " input
     fi
