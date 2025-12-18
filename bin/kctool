@@ -3,7 +3,8 @@
 # A simple script to interactively work with kubectl
 
 # Default things/kind to list if no argument is given
-MORE="all,ingress,secret"
+# ALLMORE is a play on "all" not really being "all"
+ALLMORE="all,ingress,secret"
 
 kobj=()
 
@@ -55,6 +56,7 @@ do_D() {
   local ns="$1"; shift
   ptitle "DESCRIBE $2 @$ns"
   kubectl describe -n "$ns" "$@"
+  pause4user
 }
 
 do_E() {
@@ -80,6 +82,7 @@ do_E() {
       --field-selector "involvedObject.name=$name,involvedObject.kind=$kind" \
       --sort-by=.metadata.creationTimestamp
   done
+  pause4user
 }
 
 do_F() {
@@ -95,41 +98,45 @@ do_G() {
   local ns="$1"; shift
   ptitle "GET $2 @$ns"
   kubectl get -n "$ns" "$@"
+  pause4user
 }
 
 do_H() {
- ptitle "HELP"
+  ptitle "HELP"
   cat <<_EOM_
-Enter one letter followed by a number. e.g. A12
+Enter one letter followed by a number. e.g. A12   (not case-sensitive)
 
-The number (#) corresponds to a listed K8s object.
-This maybe a range ("#-#" -> "12-34") - Consecutive objects from the same NS will be grouped.
+The number (#) corresponds to a listed K8s object index (as given prior to the prompt).
+This may be a range ("#-#" -> "12-34") - Consecutive objects from the same NS will be grouped.
 <#> -> Number is required | [#] -> Number is optional | (#) -> Number is ignored
 
 The letter can be one of:
- - C -> Clean <#> - Only remove if orphaned
+ - C -> Clean <#> - Only remove if orphaned/unused
  - D -> Describe <#>
  - E -> (recent) Events [#]
- - F -> Follow log <#>
- - G -> Plain get <#>
+ - F -> Follow log <#>   (press Return to stop)
+ - G -> (plain) Get <#>
  - H -> (this) Help (#)
  - I -> Info (get wide) <#>
- - K -> Set/change target Kind to list [#]
+ - K -> Set/change target Kind to be listing [#]
  - L -> Logs <#>
  - N -> Set/change Namespace [#]
  - Q -> Quit (#)
  - R -> Remove (Delete) <#>
  - S -> Shell <#>
+ - T -> Trail (follow new events) [#]   (press Return to stop)
  - W -> Watch (get every 6s) <#>
  - Y -> Get YAML <#>
 
 _EOM_
+  pause4user
 }
 
 do_I() {
   local ns="$1"; shift
   ptitle "INFO $2 @$ns"
   kubectl get -o wide -n "$ns" "$@"
+  pause4user
 }
 
 do_K() {
@@ -140,7 +147,7 @@ do_K() {
   # If no kind in arg, or same as current kind then ask
   if [[ -z "$kind" || "$WHAT" == "$kind" ]]; then
     read -p "Set Kind to: " -r line
-    WHAT=${line:-$MORE}
+    WHAT=${line:-$ALLMORE}
   else
     WHAT="$kind"
   fi
@@ -154,6 +161,7 @@ do_L() {
     ptitle "LOGS $obj @$ns"
     kubectl logs "$obj" -n "$ns"
   done
+  pause4user
 }
 
 do_N() {
@@ -227,11 +235,21 @@ do_Y() {
   local ns="$1"; shift
   ptitle "YAML $2 @$ns"
   kubectl get -o yaml -n "$ns" "$@"
+  pause4user
 }
 
 ptitle() {
   local T="~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~"
   printf '\n%s %s %s\n' "$T" "$1" "$T"
+}
+
+pause4user() {
+  echo ""
+  read -r -p "[Press Return to continue]" line
+  # Easteregg lets you issue commands immediately
+  if [[ -n "$line" ]]; then
+    _NEW_INPUT="$line"
+  fi
 }
 
 follow_wait() {
@@ -263,7 +281,7 @@ setup_ns() {
       NS="$1"
     fi
 
-  #If not try using current dir and namespace name
+  #If not try using current dir as namespace name
   elif [[ -z "$NS" ]]; then
     NS="$(basename "$PWD")"
 
@@ -334,9 +352,17 @@ klist() {
 }
 
 input_loop(){
+  echo "! Input just 'H' for help."
+
   while klist "$WHAT"; do
 
-    read -r -p "> " input
+    # pause4user can queue up commands
+    if [[ -n "$_NEW_INPUT" ]]; then
+      input="$_NEW_INPUT"
+      _NEW_INPUT=""
+    else
+      read -r -p "> " input
+    fi
 
     # Trim leading/trailing whitespace
     input="${input#"${input%%[![:space:]]*}"}"
@@ -385,7 +411,6 @@ input_loop(){
           fi
         fi
         echo ""
-        read -r -p "[Press Return to continue]"
       else
         echo "! No such function: '$letter'"
       fi
@@ -397,7 +422,7 @@ input_loop(){
   done
 }
 
-WHAT=${1:-$MORE}
+WHAT=${1:-$ALLMORE}
 
 setup_ns
 
