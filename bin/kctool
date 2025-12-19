@@ -286,15 +286,15 @@ confirm_action() {
     fi
 
     # Prompt for confirmation
-    read -rp "Please confirm $verb of $object? (y)es|(n)o|(a)ll [yna]> " response
+    read -rp "Please confirm $verb of $object? (y)es|(n)o|(a)lways [yna]> " response
     case "$response" in
     [Yy])
         # Proceed just this once
         return 0
         ;;
     [Aa])
-        # Set to confirm all future actions of this type
-        declare -g "$action_var"="y"
+        # Set to confirm all future actions of this verb
+        eval "${action_var}=y"
         return 0
         ;;
     *)
