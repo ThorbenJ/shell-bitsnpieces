@@ -195,7 +195,8 @@ do_S() {
   local ns="$1"; shift
   for obj in "$@"; do
     ptitle "SHELL $obj @$ns"
-    kubectl exec "$obj" -n "$ns" -it -- bash -login
+    # Can't know what shell is available, assume at least 'sh', prefer bash (if there)
+    kubectl exec "$obj" -n "$ns" -it -- sh -c 'bash -l || dash -l || sh -l || sh'
   done
 }
 
@@ -227,7 +228,7 @@ do_T() {
 do_W() {
   local ns="$1"; shift
   local OK=0
-  while [ $OK -eq 0 ]; do
+  while [ "$OK" -eq 0 ]; do
     clear
     ptitle "WATCH #$# @$ns - $(date)"
     kubectl get -o wide -n "$ns" "$@"
