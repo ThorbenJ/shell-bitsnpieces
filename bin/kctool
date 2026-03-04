@@ -6,6 +6,8 @@
 # ALLMORE is a play on "all" not really being "all"
 ALLMORE="all,ingress,secret"
 
+REQUIRED_TOOLS="kubectl jq"
+
 kobj=()
 
 # Remove replicasets where desired, current, & ready are all 0
@@ -458,6 +460,13 @@ input_loop(){
     fi
   done
 }
+
+for cmd in $REQUIRED_TOOLS; do
+    if ! command -v "$cmd" &>/dev/null; then
+        echo "Needed tool '$cmd' not found, please install it."
+        exit 1
+    fi
+done
 
 WHAT=${1:-$ALLMORE}
 

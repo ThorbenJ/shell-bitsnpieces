@@ -5,14 +5,14 @@ prepend_path() {
     local newpath="$2"
     local oldvalue="${!varname}"
 
-    # Dir doesn't exist
-    [[ -d "$newpath" ]] || return
+    # Parent dir doesn't exist
+    [[ -d "$(dirname $newpath)" ]] || return
 
     # Aleady in path
     [[ ":$oldvalue:" == *":$newpath:"* ]] && return
 
-    if [[ -z "$oldvalue" ]]; then
-        export "$varname"="$newpath"
+    if [[ -z "$oldvalue" || "$oldvalue" == ":" ]]; then
+        export "$varname"="$newpath$oldvalue"
     else
         export "$varname"="$newpath:$oldvalue"
     fi
@@ -31,3 +31,6 @@ prepend_path MANPATH           "$HOME/Local/share/man"
 prepend_path LD_LIBRARY_PATH   "$HOME/Local/lib"
 prepend_path PKG_CONFIG_PATH   "$HOME/Local/lib/pkgconfig"
 prepend_path PYTHONPATH        "$HOME/Local/lib/python"
+
+export GOBIN="$HOME/Local/bin"
+
