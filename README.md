@@ -42,7 +42,7 @@ Requires `nix`. Override paths with `GNUTIL_LOCALBIN` and `GNUTIL_LINKDIR`.
 
 ### `kctool`
 
-An interactive terminal UI for `kubectl`. Lists Kubernetes objects in the current namespace and lets you act on them with single-letter commands.
+An interactive terminal UI for `kubectl`. The typical kubectl workflow is: list objects, select the one you want, copy its name, paste it into the next command — repeat. kctool eliminates that: it lists objects with index numbers and lets you act on any of them immediately with a single keystroke. Consecutive objects can be targeted as a range, and consecutive objects in the same namespace are batched into one kubectl call.
 
 Requires `kubectl` and `jq`.
 
@@ -54,9 +54,7 @@ kctool [kind]           # default kind: all,ingress,secret
 
 Namespace defaults to the current directory name; falls back to all namespaces if not found.
 
-Commands are single letters optionally followed by an object number or range (e.g. `D3`, `L12-15`). Run `H` for the full command list, or `H X` for help on a specific command.
-
-Destructive actions (`R`, `C`) prompt for confirmation (y/n/always).
+Commands are single letters optionally followed by an object number or range (e.g. `D3`, `L12-15`). Run `H` inside the tool for the full command reference. Destructive actions (`R`, `C`) prompt for confirmation (y/n/always).
 
 ---
 
