@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+# gnutil - Fast GNU tools via nix (no profile, cached binaries)
+#
+# Use as a symlink (gsed, gawk, …) or directly:
+#   gnutil          — list all supported tools
+#   gnutil CMD …   — run GNU CMD (equivalent to calling the gCMD symlink)
+
+set -euo pipefail
+
+# tool → nixpkgs attribute
+PKG_MAP="
+sed     gnused
+awk     gawk
+grep    gnugrep
+fgrep   gnugrep
+egrep   gnugrep
+tar     gnutar
+make    gnumake
+date    coreutils
+cp      coreutils
+ls      coreutils
+rm      coreutils
+mv      coreutils
+du      coreutils
+stat    coreutils
+whoami  coreutils
+sort    coreutils
+head    coreutils
+tail    coreutils
+cut     coreutils
+tr      coreutils
+"
+
+localbin="${GNUTIL_LOCALBIN:-$HOME/Local/bin}"
+linkdir="${GNUTIL_LINKDIR:-$HOME/Local/share/gnutil}"
+
+basename="${0##*/}"
+
+if [[ "$basename" == "gnutil" ]]; then
+    if [[ $# -eq 0 ]]; then
+        echo "Supported GNU tools (gnutil CMD to install, then use gCMD):"
+        awk 'NF==2 {printf "  g%-10s %s\n", $1, $2}' <<< "$PKG_MAP"
+        exit 0
+    fi
+    cmd="$1"
+    pkg=$(awk -v c="$cmd" '$1==c{print $2; exit}' <<< "$PKG_MAP")
+    [[ -n "$pkg" ]] || { echo "gnutil: unknown tool '$cmd'" >&2; exit 127; }
+    symlink="${localbin}/g${cmd}"
+    [[ -e "$symlink" || -L "$symlink" ]] && { echo "gnutil: $symlink already exists" >&2; exit 1; }
+    mkdir -p "$localbin"
+    cd "$localbin"
+    ln -s gnutil "$symlink"
+    echo "gnutil: installed g${cmd}" >&2
+    exit 0
+fi
+
+cmd="${basename#g}"
+pkg=$(awk -v c="$cmd" '$1==c{print $2; exit}' <<< "$PKG_MAP")
+[[ -n "$pkg" ]] || { echo "gnutil: unknown tool '$cmd'" >&2; exit 127; }
+
+link="${linkdir}/${cmd}"
+cmdlink="${link}/bin/${cmd}"
+
+if [[ ! -x "$cmdlink" ]]; then
+    echo "gnutil: building $pkg for $cmd (first time only)..." >&2
+    mkdir -p "$linkdir"
+    nix-build --quiet -A "$pkg" -o "$link" '<nixpkgs>' >/dev/null
+fi
+
+exec "$cmdlink" "$@"
