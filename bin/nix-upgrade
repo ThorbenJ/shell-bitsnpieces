@@ -1,26 +1,12 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
-# How to upgrade nix keeps changing...
+## Update nix installation and installed packages
 
-# V. old
-#sudo -i sh -c 'nix-channel --update && nix-env -iA nixpkgs.nix && launchctl remove org.nixos.nix-daemon && launchctl load /Library/LaunchDaemons/org.nixos.nix-daemon.plist'
+case "$(uname -s)" in
 
-# V. 2.19.x
-# sudo -i sh <<_EOM_
-# #nix-env --install --file '<nixpkgs>' --attr nix -I nixpkgs=channel:nixpkgs-stable
-# nix-channel --update
-# nix-env --install --attr nixpkgs.nix
-# launchctl remove org.nixos.nix-daemon
-# launchctl load /Library/LaunchDaemons/org.nixos.nix-daemon.plist
-# 
-# nix-env --install --attr nixpkgs.nix
-# 
-# _EOM_
-
-
-# V 2.30.x+
-sudo -i sh <<_EOM_
-echo "--- Updating system nix install ---"
+  Darwin)
+    sudo -i sh <<_EOM_
+echo "--- Updating system nix install (macOS) ---"
 nix-env --install --file '<nixpkgs>' --attr nix cacert -I nixpkgs=channel:nixpkgs-stable
 
 echo "--- Restarting system nix daemon ---"
@@ -30,6 +16,27 @@ launchctl load /Library/LaunchDaemons/org.nixos.nix-daemon.plist
 echo "--- Collecting system garbage (removing old root generations and unlinked store paths) ---"
 nix-collect-garbage -d
 _EOM_
+    ;;
+
+  Linux)
+    sudo -i sh <<_EOM_
+echo "--- Updating system nix install (Linux) ---"
+nix-env --install --file '<nixpkgs>' --attr nix cacert -I nixpkgs=channel:nixpkgs-stable
+
+echo "--- Restarting system nix daemon ---"
+systemctl restart nix-daemon
+
+echo "--- Collecting system garbage (removing old root generations and unlinked store paths) ---"
+nix-collect-garbage -d
+_EOM_
+    ;;
+
+  *)
+    echo "Unsupported OS: $(uname -s)" >&2
+    exit 1
+    ;;
+
+esac
 
 echo "--- Updating user nix channels ---"
 nix-channel --update
