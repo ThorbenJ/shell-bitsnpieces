@@ -1,0 +1,41 @@
+#!/bin/sh
+
+# How to upgrade nix keeps changing...
+
+# V. old
+#sudo -i sh -c 'nix-channel --update && nix-env -iA nixpkgs.nix && launchctl remove org.nixos.nix-daemon && launchctl load /Library/LaunchDaemons/org.nixos.nix-daemon.plist'
+
+# V. 2.19.x
+# sudo -i sh <<_EOM_
+# #nix-env --install --file '<nixpkgs>' --attr nix -I nixpkgs=channel:nixpkgs-stable
+# nix-channel --update
+# nix-env --install --attr nixpkgs.nix
+# launchctl remove org.nixos.nix-daemon
+# launchctl load /Library/LaunchDaemons/org.nixos.nix-daemon.plist
+# 
+# nix-env --install --attr nixpkgs.nix
+# 
+# _EOM_
+
+
+# V 2.30.x+
+sudo -i sh <<_EOM_
+echo "--- Updating system nix install ---"
+nix-env --install --file '<nixpkgs>' --attr nix cacert -I nixpkgs=channel:nixpkgs-stable
+
+echo "--- Restarting system nix daemon ---"
+launchctl remove org.nixos.nix-daemon
+launchctl load /Library/LaunchDaemons/org.nixos.nix-daemon.plist
+
+echo "--- Collecting system garbage (removing old root generations and unlinked store paths) ---"
+nix-collect-garbage -d
+_EOM_
+
+echo "--- Updating user nix channels ---"
+nix-channel --update
+
+echo "--- Upgrading user nix-env packages ---"
+nix-env --upgrade
+
+echo "--- Collecting garbage (removing old generations and unlinked store paths) ---"
+nix-collect-garbage -d
