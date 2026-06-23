@@ -1,6 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # A simple script to interactively work with kubectl
+
+# Note: This script targets Bash v3.2 as that is the default on MacOS.
 
 # Default things/kind to list if no argument is given
 # ALLMORE is a play on "all" not really being "all"
@@ -14,8 +16,10 @@ kobj=()
 clean_replicaset.apps() {
   local res="$2"
   local ns="$1"
+  # shellcheck disable=SC2155
   local info=$(kubectl get "$res" -n "$ns" --no-headers)
 
+  # shellcheck disable=SC2086
   set -- $info
 
   if [[ "$2" == 0 && "$3" == 0 && "$4" == 0 ]]; then
@@ -30,14 +34,16 @@ clean_replicaset.apps() {
 clean_pod() {
   local res="$2"
   local ns="$1"
+  # shellcheck disable=SC2155
   local info=$(kubectl get "$res" -n "$ns" --no-headers)
 
   local dead_status="Error ContainerStatusUnknown"
 
   # NAME READY STATUS RESTARTS AGE
+  # shellcheck disable=SC2086
   set -- $info
 
-  if [[ "$2" == 0/* && "$dead_status" =~ "$3" ]]; then
+  if [[ "$2" == 0/* && "$dead_status" =~ $3 ]]; then
 #     echo "! Deleting: $res @$ns"
     if confirm_action "[$res]"; then
       kubectl delete "$res" -n "$ns"
@@ -75,6 +81,7 @@ do_E() {
       return
     fi
 
+    # shellcheck disable=SC2155
     local kind=$(get_actual_kind "$ns" "$obj")
     local name="${obj##*/}"
 
@@ -91,11 +98,40 @@ do_E() {
   pause4user
 }
 
+pick_container() {
+  # Usage: pick_container <ns> <kind/name>  → prints "-c <name>" or "" (single/non-pod)
+  local ns="$1" obj="$2"
+  [[ "${obj%%/*}" != pod* ]] && echo "" && return
+  local containers
+  containers=$(kubectl get "$obj" -n "$ns" \
+    -o jsonpath='{range .spec.containers[*]}{.name}{"\n"}{end}' 2>/dev/null)
+  local count
+  count=$(printf '%s\n' "$containers" | grep -c .)
+  if [[ "$count" -le 1 ]]; then
+    echo ""
+    return
+  fi
+  echo "Multiple containers in $obj:"
+  local i=0
+  while IFS= read -r c; do
+    printf "  %d: %s\n" "$i" "$c"
+    ((i++))
+  done <<<"$containers"
+  read -rp "Container [0]: " choice
+  choice="${choice:-0}"
+  local chosen
+  chosen=$(printf '%s\n' "$containers" | sed -n "$((choice+1))p")
+  echo "-c $chosen"
+}
+
 do_F() {
   local ns="$1"; shift
   for obj in "$@"; do
+    local copt
+    copt=$(pick_container "$ns" "$obj")
     ptitle "FOLLOW $obj @$ns"
-    follow_wait "Logs ($obj)" kubectl logs "$obj" -f -n "$ns"
+    # shellcheck disable=SC2086
+    follow_wait "Logs ($obj)" kubectl logs "$obj" -f -n "$ns" $copt
   done
 }
 
@@ -124,15 +160,18 @@ The letter can be one of:
  - G -> (plain) Get <#>
  - H -> (this) Help (#)
  - I -> Info (get wide) <#>
- - K -> Set/change target Kind to be listing [#]
+ - K -> Kick (rollout restart) <#>
  - L -> Logs <#>
- - N -> Set/change Namespace [#]
+ - P -> Port-forward <#>   (press Return to stop)
  - Q -> Quit (#)
  - R -> Remove (Delete) <#>
  - S -> Shell <#>
  - T -> Trail (follow new events) [#]   (press Return to stop)
+ - U -> Usage (top) [#]
  - W -> Watch (get every 6s) <#>
+ - X -> Set namespace / kind [#]
  - Y -> Get YAML <#>
+ - Z -> reVeal (base64 decoded) <#>
 
 _EOM_
   pause4user
@@ -146,39 +185,38 @@ do_I() {
 }
 
 do_K() {
-  local last="${@: -1}"
-  local kind="${last%%/*}"
-
-  ptitle "Set Kind"
-  # If no kind in arg, or same as current kind then ask
-  if [[ -z "$kind" || "$WHAT" == "$kind" ]]; then
-    read -p "Set Kind to: " -r line
-    WHAT=${line:-$ALLMORE}
-  else
-    WHAT="$kind"
+  local ns="$1"; shift
+  ptitle "KICK (rollout restart) $# object(s) @$ns"
+  if confirm_action "[$*]" "rollout restart"; then
+    kubectl rollout restart -n "$ns" "$@"
   fi
-
-  echo "! What kind to list is now: $WHAT"
+  pause4user
 }
 
 do_L() {
   local ns="$1"; shift
   for obj in "$@"; do
+    local copt
+    copt=$(pick_container "$ns" "$obj")
     ptitle "LOGS $obj @$ns"
-    kubectl logs "$obj" -n "$ns"
+    # shellcheck disable=SC2086
+    kubectl logs "$obj" -n "$ns" $copt
   done
   pause4user
 }
 
-do_N() {
-  ptitle "Set Namespace"
-  # If no NS arg, or same as current NS then ask
-  if [[ -z "$1" || "$NAMESPACE" == "$1" ]]; then
-    read -p "Set Namespace to: " -r line
-    setup_ns "$line"
-  else
-    setup_ns "$1"
+do_P() {
+  local ns="$1"; shift
+  local obj="$1"
+  ptitle "PORT-FORWARD $obj @$ns"
+  read -rp "Ports (local:remote or just port): " ports
+  if [[ -z "$ports" ]]; then
+    echo "! No ports specified."
+    pause4user
+    return
   fi
+  # shellcheck disable=SC2086
+  follow_wait "Port-forward ($obj $ports)" kubectl port-forward "$obj" $ports -n "$ns"
 }
 
 do_Q() {
@@ -188,7 +226,7 @@ do_Q() {
 do_R() {
   local ns="$1"; shift
   ptitle "REMOVE $# (objects) in @$ns"
-  if confirm_action "[$@]"; then
+  if confirm_action "[$*]"; then
     kubectl delete -n "$ns" "$@"
   fi
 }
@@ -196,9 +234,12 @@ do_R() {
 do_S() {
   local ns="$1"; shift
   for obj in "$@"; do
+    local copt
+    copt=$(pick_container "$ns" "$obj")
     ptitle "SHELL $obj @$ns"
     # Can't know what shell is available, assume at least 'sh', prefer bash (if there)
-    kubectl exec "$obj" -n "$ns" -it -- sh -c 'bash -l || dash -l || sh -l || sh'
+    # shellcheck disable=SC2086
+    kubectl exec "$obj" -n "$ns" -it $copt -- sh -c 'bash -l || dash -l || sh -l || sh'
   done
 }
 
@@ -210,6 +251,7 @@ do_T() {
       ptitle "TRAIL EVENTS (all objects) @$ns"
       follow_wait "Events (@$ns)" kubectl get events -n "$ns" --watch --sort-by=.metadata.creationTimestamp
     else
+      # shellcheck disable=SC2155
       local kind=$(get_actual_kind "$ns" "$obj")
       local name="${obj##*/}"
 
@@ -240,11 +282,100 @@ do_W() {
   done
 }
 
+do_U() {
+  local ns="$1"; shift
+
+  if [[ "$#" -eq 0 || "$1" == "$WHAT" ]]; then
+    ptitle "USAGE (top pods) @${ns:-ALL}"
+    if [[ -n "$ns" ]]; then
+      kubectl top pods -n "$ns"
+    else
+      kubectl top pods --all-namespaces
+    fi
+    pause4user
+    return
+  fi
+
+  for obj in "$@"; do
+    local kind="${obj%%/*}"
+    local name="${obj##*/}"
+
+    if [[ "$kind" == pod* ]]; then
+      ptitle "USAGE $obj @$ns"
+      kubectl top pod "$name" -n "$ns"
+    elif [[ "$kind" == node* ]]; then
+      ptitle "USAGE $obj"
+      kubectl top node "$name"
+    else
+      local selector
+      selector=$(kubectl get "$obj" -n "$ns" -o json 2>/dev/null \
+        | jq -r '.spec.selector.matchLabels | to_entries | map(.key+"="+.value) | join(",")')
+      if [[ -n "$selector" && "$selector" != "null" ]]; then
+        ptitle "USAGE pods for $obj @$ns"
+        kubectl top pods -n "$ns" -l "$selector"
+      else
+        echo "! Could not get pod selector for $obj"
+      fi
+    fi
+  done
+  pause4user
+}
+
+do_X() {
+  local ns="$1"; shift
+  local last="${*: -1}"
+
+  # With an object arg: focus kind+ns on that object
+  if [[ "$last" == */* ]]; then
+    local kind="${last%%/*}"
+    setup_ns "$ns"
+    WHAT="$kind"
+    echo "! Focused on kind: $WHAT  namespace: ${NAMESPACE:-<ALL>}"
+    return
+  fi
+
+  # No object: interactive prompts, Enter keeps current value
+  ptitle "Set Namespace / Kind"
+  read -rp "Namespace [${NAMESPACE:-<ALL>}]: " ns_input
+  [[ -n "$ns_input" ]] && setup_ns "$ns_input"
+
+  read -rp "Kind [${WHAT}]: " kind_input
+  if [[ -n "$kind_input" ]]; then
+    WHAT="$kind_input"
+    echo "! Kind is now: $WHAT"
+  fi
+}
+
 do_Y() {
   local ns="$1"; shift
   ptitle "YAML $2 @$ns"
   kubectl get -o yaml -n "$ns" "$@"
   pause4user
+}
+
+do_Z() {
+  local ns="$1"; shift
+  for obj in "$@"; do
+    ptitle "REVEAL $obj @$ns"
+    kubectl get -n "$ns" "$obj" -o yaml 2>/dev/null | while IFS= read -r line; do
+      echo "$line"
+      if [[ "$line" =~ ^([[:space:]]*[^:#]+:[[:space:]])([^[:space:]].+)$ ]]; then
+        local val="${BASH_REMATCH[2]}"
+        if is_base64 "$val"; then
+          local decoded
+          decoded=$(base64 --decode <<< "$val" 2>/dev/null)
+          printf '%s ^- b64 decoded: %s\n' "${BASH_REMATCH[1]//?/ }" "$decoded"
+        fi
+      fi
+    done
+  done
+  pause4user
+}
+
+is_base64() {
+  [[ "$1" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] && \
+  (( ${#1} % 4 == 0 )) && \
+  base64 --decode <<< "$1" &>/dev/null
 }
 
 ptitle() {
@@ -281,7 +412,8 @@ get_actual_kind() {
 confirm_action() {
     local object=${1:?Object (thing being acted on) required}
     local verb=${2:-removal}
-    local action_var="CONFIRM_ACTION_$(tr '[:lower:]' '[:upper:]' <<<$verb)"
+    # shellcheck disable=SC2155
+    local action_var="CONFIRM_ACTION_$(tr '[:lower:]' '[:upper:]' <<<"$verb")"
 
     # If the relevant CONFIRM_ACTION_* variable is already 'y', return immediately
     if [[ "${!action_var}" == "y" ]]; then
@@ -349,8 +481,10 @@ klist() {
     KCNS="--all-namespaces"
   fi
 
-  KCGET="$(kubectl get "$res" $KCNS --show-kind 2>/dev/null)"
-  [[ $? = 0 ]] || return $?
+  local kc_exit
+  KCGET="$(kubectl get "$res" "$KCNS" --show-kind 2>/dev/null)"
+  kc_exit=$?
+  [[ $kc_exit -eq 0 ]] || return $kc_exit
 
   ptitle "LIST $res"
 
@@ -365,6 +499,7 @@ klist() {
       continue
     fi
 
+    # shellcheck disable=SC2086
     set -- $line
 
     if [[ -z "$NAMESPACE" ]]; then
@@ -379,7 +514,7 @@ klist() {
       name="${BASH_REMATCH[2]}"
 
       printf "%2d: %s\n" "$index" "$line"
-      kobj[$index]="$NS/$kind/$name"
+      kobj[index]="$NS/$kind/$name"
       ((index++))
     else
       echo "$line"
