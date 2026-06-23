@@ -13,7 +13,8 @@ pc_cwd="\e[96;40m"          #current dir colour
 alias rs="test \$? = 0 && echo -e \"\033[92;40m=)\" || echo -e \"\033[91;40m:(\""
 
 # Touch with extreme caution, print/non-print chars carefully counted and balanced, so bash knows the correct prompt length
-PS1="\[${pc_term}\]\l\[${pc_symbol}\]|\[${pc_user}\]\u\[${pc_symbol}@${pc_host}\]\h\[${pc_symbol}:${pc_cwd}\]\w \[\`rs\`\]\033[0m"
+# rs will return two chars, so to ensure correct wrapping the '@' and ':' are intentionally inside \[\] to provide a 2 char budget
+PS1="\[${pc_term}\]\l\[${pc_symbol}\]|\[${pc_user}\]\u\[${pc_symbol}@${pc_host}\]\h\[${pc_symbol}:${pc_cwd}\]\w \[\`rs\`\]\033[0m "
 
 export PS1
 
