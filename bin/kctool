@@ -171,7 +171,7 @@ The letter can be one of:
  - W -> Watch (get every 6s) <#>
  - X -> Set namespace / kind [#]
  - Y -> Get YAML <#>
- - Z -> reVeal (base64 decoded) <#>
+ - Z -> Get YAML but try to b64 decode values <#>
 
 _EOM_
   pause4user
@@ -360,11 +360,13 @@ do_Z() {
     kubectl get -n "$ns" "$obj" -o yaml 2>/dev/null | while IFS= read -r line; do
       echo "$line"
       if [[ "$line" =~ ^([[:space:]]*[^:#]+:[[:space:]])([^[:space:]].+)$ ]]; then
+        local pad="${BASH_REMATCH[1]}"  
         local val="${BASH_REMATCH[2]}"
         if is_base64 "$val"; then
           local decoded
           decoded=$(base64 --decode <<< "$val" 2>/dev/null)
-          printf '%s ^- b64 decoded: %s\n' "${BASH_REMATCH[1]//?/ }" "$decoded"
+          pad="${pad%%:*}"  # leading spaces + key name, up to (not incl.) the colon
+          printf '%s^- b64 decoded: %s\n' "${pad//?/ }" "$decoded"
         fi
       fi
     done
@@ -373,9 +375,21 @@ do_Z() {
 }
 
 is_base64() {
-  [[ "$1" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] && \
-  (( ${#1} % 4 == 0 )) && \
-  base64 --decode <<< "$1" &>/dev/null
+  local val="$1"
+  # Minimum 8 chars filters short common words (true, User, ctfd, kind, etc.)
+  [[ "${#val}" -ge 8 ]] || return 1
+  [[ "$val" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] || return 1
+  (( ${#val} % 4 == 0 )) || return 1
+
+  local decoded
+  decoded=$(base64 --decode <<< "$val" 2>/dev/null) || return 1
+
+  # Reject if >30% of decoded bytes are non-printable, non-whitespace (binary garbage)
+  local total garbage
+  total=$(printf '%s' "$decoded" | LC_ALL=C wc -c)
+  (( total == 0 )) && return 1
+  garbage=$(printf '%s' "$decoded" | LC_ALL=C tr -d '[:print:][:space:]' | LC_ALL=C wc -c)
+  (( garbage * 10 <= total * 3 ))
 }
 
 ptitle() {
