@@ -1,4 +1,6 @@
-#!/bin/bash
+#bash sourced
+
+## Add some alias shorthands to save typing
 
 # Usual 'kc'
 alias kc=kubectl

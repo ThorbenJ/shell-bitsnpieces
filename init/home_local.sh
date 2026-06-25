@@ -1,4 +1,6 @@
-#!/bin/bash
+#bash sourced
+
+## Setup $HOME/Local as the place to install user local programmes
 
 prepend_path() {
     local varname="$1"

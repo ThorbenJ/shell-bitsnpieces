@@ -3,7 +3,7 @@
 #
 # Use as a symlink (gsed, gawk, …) or directly:
 #   gnutil          — list all supported tools
-#   gnutil CMD …   — run GNU CMD (equivalent to calling the gCMD symlink)
+#   gnutil CMD …   — install and run GNU CMD (thereafter you can use gCMD)
 
 set -euo pipefail
 

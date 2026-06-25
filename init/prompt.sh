@@ -1,7 +1,7 @@
-#!/bin/bash
+#bash sourced
 
-# Prompt with a smilie =) if last commend succeded and a frowny :( if it failed
-# Plus info I like to have with colour coding
+## Prompt with a smilie =) if last commend succeded and a frowny :( if it failed
+## Plus info I like to have with colour coding
 
 # fancy prompt colours
 pc_symbol="\e[97;40m"       #Symbol colours
