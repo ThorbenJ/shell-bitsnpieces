@@ -34,6 +34,23 @@ tr      coreutils
 localbin="${GNUTIL_LOCALBIN:-$HOME/Local/bin}"
 linkdir="${GNUTIL_LINKDIR:-$HOME/Local/share/gnutil}"
 
+# Ensures the nix package for CMD is built and prints the path to the binary.
+# All user-visible output goes to stderr so the printed path is clean.
+ensure_pkg() {
+    local cmd="$1"
+    local pkg link cmdlink
+    pkg=$(awk -v c="$cmd" '$1==c{print $2; exit}' <<< "$PKG_MAP")
+    [[ -n "$pkg" ]] || { echo "gnutil: unknown tool '$cmd'" >&2; return 127; }
+    link="${linkdir}/${cmd}"
+    cmdlink="${link}/bin/${cmd}"
+    if [[ ! -x "$cmdlink" ]]; then
+        echo "gnutil: building $pkg for $cmd (first time only)..." >&2
+        mkdir -p "$linkdir"
+        nix-build --quiet -A "$pkg" -o "$link" '<nixpkgs>' 1>&2
+    fi
+    echo "$cmdlink"
+}
+
 basename="${0##*/}"
 
 if [[ "$basename" == "gnutil" ]]; then
@@ -42,29 +59,18 @@ if [[ "$basename" == "gnutil" ]]; then
         awk 'NF==2 {printf "  g%-10s %s\n", $1, $2}' <<< "$PKG_MAP"
         exit 0
     fi
-    cmd="$1"
+    cmd="${1#g}"
     pkg=$(awk -v c="$cmd" '$1==c{print $2; exit}' <<< "$PKG_MAP")
     [[ -n "$pkg" ]] || { echo "gnutil: unknown tool '$cmd'" >&2; exit 127; }
+    ensure_pkg "$cmd" >/dev/null
     symlink="${localbin}/g${cmd}"
     [[ -e "$symlink" || -L "$symlink" ]] && { echo "gnutil: $symlink already exists" >&2; exit 1; }
     mkdir -p "$localbin"
-    cd "$localbin"
     ln -s gnutil "$symlink"
     echo "gnutil: installed g${cmd}" >&2
     exit 0
 fi
 
 cmd="${basename#g}"
-pkg=$(awk -v c="$cmd" '$1==c{print $2; exit}' <<< "$PKG_MAP")
-[[ -n "$pkg" ]] || { echo "gnutil: unknown tool '$cmd'" >&2; exit 127; }
-
-link="${linkdir}/${cmd}"
-cmdlink="${link}/bin/${cmd}"
-
-if [[ ! -x "$cmdlink" ]]; then
-    echo "gnutil: building $pkg for $cmd (first time only)..." >&2
-    mkdir -p "$linkdir"
-    nix-build --quiet -A "$pkg" -o "$link" '<nixpkgs>' >/dev/null
-fi
-
+cmdlink=$(ensure_pkg "$cmd") || exit $?
 exec "$cmdlink" "$@"
