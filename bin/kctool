@@ -10,6 +10,8 @@ ALLMORE="all,ingress,secret"
 
 REQUIRED_TOOLS="kubectl jq"
 
+TOP_SORTBY=${KCTOOL_TOP_SORTBY:-memory}
+
 kobj=()
 
 # Remove replicasets where desired, current, & ready are all 0
@@ -288,9 +290,9 @@ do_U() {
   if [[ "$#" -eq 0 || "$1" == "$WHAT" ]]; then
     ptitle "USAGE (top pods) @${ns:-ALL}"
     if [[ -n "$ns" ]]; then
-      kubectl top pods -n "$ns"
+      kubectl top pods -n "$ns" --sort-by="$TOP_SORTBY"
     else
-      kubectl top pods --all-namespaces
+      kubectl top pods --all-namespaces --sort-by="$TOP_SORTBY"
     fi
     pause4user
     return
@@ -312,7 +314,7 @@ do_U() {
         | jq -r '.spec.selector.matchLabels | to_entries | map(.key+"="+.value) | join(",")')
       if [[ -n "$selector" && "$selector" != "null" ]]; then
         ptitle "USAGE pods for $obj @$ns"
-        kubectl top pods -n "$ns" -l "$selector"
+        kubectl top pods -n "$ns" -l "$selector" --sort-by="$TOP_SORTBY"
       else
         echo "! Could not get pod selector for $obj"
       fi
