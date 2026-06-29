@@ -11,6 +11,7 @@ ALLMORE="all,ingress,secret"
 REQUIRED_TOOLS="kubectl jq"
 
 TOP_SORTBY=${KCTOOL_TOP_SORTBY:-memory}
+WATCH_DELAY=${KCTOOL_WATCH_DELEY:-6}
 
 kobj=()
 
@@ -26,7 +27,7 @@ clean_replicaset.apps() {
 
   if [[ "$2" == 0 && "$3" == 0 && "$4" == 0 ]]; then
 #     echo "! Deleting: $res @$ns"
-    if confirm_action "[$res]"; then
+    if confirm_action "[$res]" "CleanReplicaSet"; then
       kubectl delete "$res" -n "$ns"
     fi
   fi
@@ -39,7 +40,7 @@ clean_pod() {
   # shellcheck disable=SC2155
   local info=$(kubectl get "$res" -n "$ns" --no-headers)
 
-  local dead_status="Error ContainerStatusUnknown"
+  local dead_status="Error ContainerStatusUnknown Completed Succeeded"
 
   # NAME READY STATUS RESTARTS AGE
   # shellcheck disable=SC2086
@@ -47,7 +48,7 @@ clean_pod() {
 
   if [[ "$2" == 0/* && "$dead_status" =~ $3 ]]; then
 #     echo "! Deleting: $res @$ns"
-    if confirm_action "[$res]"; then
+    if confirm_action "[$res]" "CleanPod$3"; then
       kubectl delete "$res" -n "$ns"
     fi
   fi
@@ -170,7 +171,7 @@ The letter can be one of:
  - S -> Shell <#>
  - T -> Trail (follow new events) [#]   (press Return to stop)
  - U -> Usage (top) [#]
- - W -> Watch (get every 6s) <#>
+ - W -> Watch (get every ${WATCH_DELAY}s) <#>
  - X -> Set namespace / kind [#]
  - Y -> Get YAML <#>
  - Z -> Get YAML but try to b64 decode values <#>
@@ -280,7 +281,7 @@ do_W() {
     kubectl get -o wide -n "$ns" "$@"
     OK=$?
     echo ""
-    read -t 6 -r -p "[Press Return to stop]" line && break
+    read -t "$WATCH_DELAY" -r -p "[Press Return to stop]" line && break
   done
 }
 
